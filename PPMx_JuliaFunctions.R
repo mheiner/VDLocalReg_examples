@@ -1,9 +1,10 @@
-fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE, 
-                    progressfile="", report_freq=5000,
-                    sampling_model="Reg",
-                    cohesion, similarity, baseline, baseline_prior, 
-                    upd_beta=TRUE, # irrelevant if sampling_model = "Mean"
-                    y_grid=NULL, crossxy=TRUE) {
+fit_PPMx <- function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE, 
+                     progressfile="", report_freq=5000,
+                     sampling_model="Reg",
+                     cohesion, similarity, baseline, baseline_prior, 
+                     upd_beta=TRUE, # irrelevant if sampling_model = "Mean"
+                     y_grid=NULL, crossxy=TRUE,
+                     upd_c_mtd="MH", M_newclust=10) {
   
   julia_assign("y", y)
   julia_command("y = float(y)", show_value=FALSE)
@@ -80,6 +81,15 @@ fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE,
     julia_command("upd_params = [:C, :mu, :sig, :mu0, :sig0]", show_value=FALSE)
   }
   
+  if (upd_c_mtd == "MH") {
+    julia_command("upd_c_mtd = :MH", show_value=FALSE)
+    julia_command("M_newclust = 1") # unused default value
+  } else if (upd_c_mtd == "FC") {
+    julia_command("upd_c_mtd = :FC", show_value=FALSE)
+    julia_assign("M_newclust", M_newclust)
+    julia_command("M_newclust = Int(M_newclust)")
+  }
+  
   julia_command("for i in 1:length(mod.state.lik_params) mod.state.lik_params[i].sig = 0.1 end", show_value=FALSE) # temporary hack
   julia_command("mod.state.cohesion = deepcopy(cohesion)", show_value=FALSE)
   julia_command("mod.state.similarity = deepcopy(similarity)", show_value=FALSE)
@@ -94,7 +104,9 @@ fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE,
         n_procs=1,
         report_filename=progressfile,
         report_freq=Int(report_freq),
-        update=upd_params
+        update=upd_params,
+        upd_c_mtd=upd_c_mtd,
+        M_newclust=M_newclust
   )', show_value=FALSE)
   
   julia_command('etr(timestart; n_iter_timed=nburn, n_keep=nkeep, thin=nthin, outfilename=progressfile)', show_value=FALSE)
@@ -106,43 +118,45 @@ fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE,
                report_filename=progressfile,
                report_freq=Int(report_freq),
                update=upd_params,
-               monitor=[:C, :mu, :sig, :beta, :mu0, :sig0, :llik_mat]
+               monitor=[:C, :mu, :sig, :beta, :mu0, :sig0, :llik_mat],
+               upd_c_mtd=upd_c_mtd,
+               M_newclust=M_newclust
   )', show_value=FALSE)
   
-  sim_llik = julia_eval("[ sims[ii][:llik] for ii in 1:nkeep ]")
-  sim_llik_mat = julia_eval("permutedims( hcat( [ sims[ii][:llik_mat] for ii in 1:nkeep ]...) )")
-  sim_nclus = julia_eval("[ maximum(sims[ii][:C]) for ii in 1:nkeep ]")
-  sim_Si = julia_eval("permutedims( hcat( [ sims[ii][:C] for ii in 1:nkeep ]...) )")
+  sim_llik <- julia_eval("[ sims[ii][:llik] for ii in 1:nkeep ]")
+  sim_llik_mat <- julia_eval("permutedims( hcat( [ sims[ii][:llik_mat] for ii in 1:nkeep ]...) )")
+  sim_nclus <- julia_eval("[ maximum(sims[ii][:C]) for ii in 1:nkeep ]")
+  sim_Si <- julia_eval("permutedims( hcat( [ sims[ii][:C] for ii in 1:nkeep ]...) )")
   
-  sim_mu = julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:mu] for ii in 1:nkeep, i in 1:mod.n ]")
-  sim_sig = julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:sig] for ii in 1:nkeep, i in 1:mod.n ]")
+  sim_mu <- julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:mu] for ii in 1:nkeep, i in 1:mod.n ]")
+  sim_sig <- julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:sig] for ii in 1:nkeep, i in 1:mod.n ]")
 
-  sim_mu0 = julia_eval("[ sims[ii][:baseline][:mu0] for ii in 1:nkeep ]")
-  sim_sig0 = julia_eval("[ sims[ii][:baseline][:sig0] for ii in 1:nkeep ]")
+  sim_mu0 <- julia_eval("[ sims[ii][:baseline][:mu0] for ii in 1:nkeep ]")
+  sim_sig0 <- julia_eval("[ sims[ii][:baseline][:sig0] for ii in 1:nkeep ]")
   
   if (sampling_model == "Reg") {
-    sim_beta = julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:beta][kk] for ii in 1:nkeep, i in 1:mod.n, kk in 1:mod.p ]")
-    out = list(llik=sim_llik, llik_mat=sim_llik_mat, nclus=sim_nclus, Si=sim_Si, mu=sim_mu, sig=sim_sig, beta=sim_beta, mu0=sim_mu0, sig0=sim_sig0)
+    sim_beta <- julia_eval("[ sims[ii][:lik_params][sims[ii][:C][i]][:beta][kk] for ii in 1:nkeep, i in 1:mod.n, kk in 1:mod.p ]")
+    out <- list(llik=sim_llik, llik_mat=sim_llik_mat, nclus=sim_nclus, Si=sim_Si, mu=sim_mu, sig=sim_sig, beta=sim_beta, mu0=sim_mu0, sig0=sim_sig0)
   } else if (sampling_model == "Mean") {
-    out = list(llik=sim_llik, llik_mat=sim_llik_mat, nclus=sim_nclus, Si=sim_Si, mu=sim_mu, sig=sim_sig, mu0=sim_mu0, sig0=sim_sig0)    
+    out <- list(llik=sim_llik, llik_mat=sim_llik_mat, nclus=sim_nclus, Si=sim_Si, mu=sim_mu, sig=sim_sig, mu0=sim_mu0, sig0=sim_sig0)    
   }
   
   
   if (!is.null(Xpred)) {
-    out$Pred = list()
+    out$Pred <- list()
     if (is.list(Xpred)) {
-      nlist = length(Xpred)
+      nlist <- length(Xpred)
       for ( l in 1:nlist ) {
         julia_assign("Xpred", Xpred[[l]])
         julia_command("Xpred = Matrix(float(Xpred))", show_value=FALSE)
         julia_command("Ypred, Cpred, Mean_pred = postPred(Xpred, mod, sims, upd_params)", show_value=FALSE)
         
-        out$Pred[[l]] = list()
-        out$Pred[[l]]$Xpred = Xpred[[l]]
-        out$Pred[[l]]$crossxy = crossxy[[l]]
-        out$Pred[[l]]$Ypred = julia_eval("Ypred")
-        out$Pred[[l]]$Cpred = julia_eval("Cpred")
-        out$Pred[[l]]$Mpred = julia_eval("Mean_pred")
+        out$Pred[[l]] <- list()
+        out$Pred[[l]]$Xpred <- Xpred[[l]]
+        out$Pred[[l]]$crossxy <- crossxy[[l]]
+        out$Pred[[l]]$Ypred <- julia_eval("Ypred")
+        out$Pred[[l]]$Cpred <- julia_eval("Cpred")
+        out$Pred[[l]]$Mpred <- julia_eval("Mean_pred")
         
         if (!is.null(y_grid)) {
           stopifnot(is.list(y_grid))
@@ -164,20 +178,20 @@ fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE,
       julia_command("Xpred = Matrix(float(Xpred))", show_value=FALSE)
       julia_command("Ypred, Cpred, Mean_pred = postPred(Xpred, mod, sims, upd_params)", show_value=FALSE)
 
-      out$Pred[[1]] = list()
-      out$Pred[[1]]$Xpred = Xpred
-      out$Pred[[1]]$crossxy = crossxy
-      out$Pred[[1]]$Ypred = julia_eval("Ypred")
-      out$Pred[[1]]$Cpred = julia_eval("Cpred")
-      out$Pred[[1]]$Mpred = julia_eval("Mean_pred")
+      out$Pred[[1]] <- list()
+      out$Pred[[1]]$Xpred <- Xpred
+      out$Pred[[1]]$crossxy <- crossxy
+      out$Pred[[1]]$Ypred <- julia_eval("Ypred")
+      out$Pred[[1]]$Cpred <- julia_eval("Cpred")
+      out$Pred[[1]]$Mpred <- julia_eval("Mean_pred")
       
       if (!is.null(y_grid)) {
         julia_assign("y_grid", y_grid)
         julia_assign("crossxy", crossxy)
         julia_command("y_grid = float(y_grid)", show_value=FALSE)
         julia_command("ppld = postPredLogdens(Xpred, y_grid, mod, sims, update_params=upd_params, crossxy=crossxy)", show_value=FALSE)
-        out$Pred[[1]]$PPlogDens = julia_eval("ppld")
-        out$Pred[[1]]$y_grid = y_grid
+        out$Pred[[1]]$PPlogDens <- julia_eval("ppld")
+        out$Pred[[1]]$y_grid <- y_grid
       }
       
     }
@@ -192,13 +206,13 @@ fit_PPMx = function(y, X, Xpred, nburn, nkeep, nthin, pred_insamp=FALSE,
     out$logDens_insamp = julia_eval("ppld_is")
   }
   
-  out$y = y
-  out$X = X
+  out$y <- y
+  out$X <- X
   
   return(out)
 }
 
-pred_PPMx = function(Xpred, upd_params=c("mu", "sig", "beta", "mu0", "sig0")) {
+pred_PPMx <- function(Xpred, upd_params=c("mu", "sig", "beta", "mu0", "sig0")) {
   julia_assign("Xpred1", Xpred)
   julia_command("Xpred1 = Matrix(float(Xpred1))", show_value=FALSE)
 
@@ -221,10 +235,10 @@ pred_PPMx = function(Xpred, upd_params=c("mu", "sig", "beta", "mu0", "sig0")) {
   
   julia_command("Ypred1, Cpred1, Mpred1 = postPred(Xpred1, mod, sims, upd_params)", show_value=FALSE)
   
-  out = list()
-  out$Ypred = julia_eval("Ypred1")
-  out$Cpred = julia_eval("Cpred1")
-  out$Mpred = julia_eval("Mpred1")
+  out <- list()
+  out$Ypred <- julia_eval("Ypred1")
+  out$Cpred <- julia_eval("Cpred1")
+  out$Mpred <- julia_eval("Mpred1")
   
   out
 }

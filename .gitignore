@@ -7,16 +7,22 @@ BostonHousing/plots/*
 OldFaithful/plots/*
 SimStudy_Friedman/plots/*
 SUPPORT/plots/*
+NHANES/plots/*
+MNAR_experiment/plots/*
 
 BostonHousing/postsim/*
 OldFaithful/postsim/*
 SimStudy_Friedman/postsim/*
 SUPPORT/postsim/*
+NHANES/postsim/*
+MNAR_experiment/postsim/*
 
 BostonHousing/progress/*
 OldFaithful/progress/*
 SimStudy_Friedman/progress/*
 SUPPORT/progress/*
+NHANES/progress/*
+MNAR_experiment/progress/*
 
 *.png
 *.pdf

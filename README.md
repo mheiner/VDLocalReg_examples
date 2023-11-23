@@ -5,7 +5,7 @@ The scripts throughout require Julia (version 1.8.5+) and the [ProductPartitionM
 Benchmarking code can be found in the test folder of the [ProductPartitionModels.jl](https://github.com/mheiner/ProductPartitionModels.jl) GitHub repository.
 
 ## Folders and their contents
-Each of the `BostonHousing`, `OldFaithful`, `SimStudy_Friedman`, and `SUPPORT` folders contain a similar progression of R scripts, with prefix `0` indicating preprocessing code, prefix `1` indicating code used to fit models, and prefix `2` for postprocessing. The folders also contain `.sh` scripts for large-scale fitting across multiple replicated training/test pairs or simulations. See Misc below before attempting to run `1_fit_competitors.R`.
+Each of the `NHANES`, `OldFaithful`, `BostonHousing`,  `MNAR_experiment`, `SimStudy_Friedman`, and `SUPPORT` folders contain a similar progression of R scripts, with prefix `0` indicating preprocessing code, prefix `1` indicating code used to fit models, and prefix `2` for postprocessing. The folders also contain `.sh` scripts for large-scale fitting across multiple replicated training/test pairs or simulations. See Misc below before attempting to run `1_fit_competitors.R`.
 
 We recommend starting with the `OldFaithful` example, which exemplifies the most tasks with the most comprehensive commenting in the code.
 
